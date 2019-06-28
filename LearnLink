@@ -1,2 +1,110 @@
 Learn using SQL SERVER
 https://www.codeproject.com/Articles/1239390/Creating-Simple-API-in-Node-js
+
+////////   add this code in node server //////
+const express = require('express');
+const router = express.Router();
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const config = require('config');
+const auth = require('../middleware/auth');
+const { check, validationResult } = require('express-validator/check');
+
+const User = require('../models/User');
+
+const sql = require('mssql');
+
+// @route     GET api/auth
+// @desc      Get logged in user
+// @access    Private
+router.get('/', async (req, res) => {
+  try {
+    //const user = await User.findById(req.user.id).select('-password');
+    console.log('get auth');
+    var conn = new sql.ConnectionPool(config);
+    conn.connect().then(function(conn) {
+      var request = new sql.Request(conn);
+      request.input('inUsername', sql.VarChar(30), username);
+      request
+        .execute('sp_getLoginFromUserAccount_React')
+        .then(function(recordset) {
+          //console.dir(recordset);
+          res.json(recordset.recordset);
+          conn.close();
+        })
+        .catch(function(err) {
+          console.log(err);
+          conn.close();
+        });
+    });
+    //res.json(user);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server Error');
+  }
+});
+
+router.post(
+  '/',
+  [
+    check('username', 'Please include a valid username').exists(),
+    check('password', 'Password is required').exists()
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { username, password } = req.body;
+
+    try {
+      console.log(username, password);
+
+      var conn = new sql.ConnectionPool(config);
+      conn.connect().then(function(conn) {
+        var request = new sql.Request(conn);
+        request.input('inUsername', sql.VarChar(30), username);
+        request.input('inPassword', sql.VarChar(30), password);
+        request
+          .execute('sp_getLoginFromUserAccount')
+          .then(function(recordset) {
+            //console.dir(recordset);
+
+            //res.json(recordset.recordset);
+
+            const payload = {
+              user: {
+                id: username
+              }
+            };
+
+            jwt.sign(
+              payload,
+              config.get('jwtSecret'),
+              {
+                expiresIn: 360000
+              },
+              (err, token) => {
+                if (err) throw err;
+                res.json({ token });
+              }
+            );
+
+            conn.close();
+          })
+          .catch(function(err) {
+            console.log(err);
+            conn.close();
+          });
+      });
+    } catch (err) {
+      console.error(err.message);
+      res.status(500).send('Server Error');
+    }
+  }
+);
+
+module.exports = router;
+
